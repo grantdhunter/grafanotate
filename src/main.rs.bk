@@ -1,0 +1,58 @@
+extern crate slack;
+extern crate time;
+
+struct EventHandler;
+
+
+impl slack::EventHandler for EventHandler {
+    fn on_event(&mut self, cli: &mut slack::RtmClient, event: Result<&slack::Event, slack::Error>, raw_json:&str){
+        println!("event: {:?}, {:?}", event, raw_json);
+    }
+
+    fn on_ping(&mut self, cli: &mut slack::RtmClient) {
+        println!("on_ping");
+    }
+
+    fn on_close(&mut self, cli: &mut slack::RtmClient) {
+        println!("on_close");
+    }
+    
+    fn on_connect(&mut self, cli: &mut slack::RtmClient){
+        println!("Connected");
+    }
+
+}
+
+
+
+struct Command {
+    title: String,
+    tags: Vec<String>,
+    time: String
+}
+
+impl Command {
+    fn parse_message(&mut self, message: &str){
+        let tokens = message.split(':').collect();
+        
+        self.title = tokens.get(0);
+        self.tags = tokens.get(1).and_then(|token| token.split(",").collect() );
+        self.time = tokens.get(2)
+    }
+
+}
+
+fn main() {
+    let api_key = "xoxb-60267315107-BM9hS0cOYPThDVLdHg8OPn4u".to_string();
+
+    let mut event_handler = EventHandler;
+
+    let mut cli = slack::RtmClient::new(&api_key);
+
+    let result = cli.login_and_run(&mut event_handler);
+
+    match result {
+        Ok(_)=>{}
+        Err(err) => panic!("Error: {}", err)
+    }
+}

@@ -1,0 +1,8 @@
+[package]
+name = "change_log_bot"
+version = "0.1.0"
+authors = ["Grant <ghunter@drivewyze.com>"]
+
+[dependencies]
+slack = "*"
+chrono = "*"
