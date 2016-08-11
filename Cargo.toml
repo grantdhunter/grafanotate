@@ -6,3 +6,9 @@ authors = ["Grant <ghunter@drivewyze.com>"]
 [dependencies]
 slack = "*"
 chrono = "*"
+hyper = "*"
+serde = "*"
+serde_json = "*"
+serde_macros = "*"
+toml = "*"
+rustc-serialize = "*"

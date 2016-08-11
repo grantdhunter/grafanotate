@@ -1,10 +1,28 @@
+#![feature(custom_derive, plugin)]
+#![plugin(serde_macros)]
+
 extern crate slack;
 extern crate chrono;
+extern crate hyper;
+extern crate serde_json;
+extern crate toml;
+extern crate rustc_serialize;
 
-use chrono::{DateTime, UTC, TimeZone, Local};
+use chrono::{UTC, TimeZone, Local};
+use std::io::Read;
+use std::fs::File;
+use hyper::Client;
 
-struct EventHandler;
+struct EventHandler {
+    config: Config,
+}
 
+
+impl EventHandler {
+    fn new(config: Config) -> EventHandler {
+        EventHandler { config: config }
+    }
+}
 
 impl slack::EventHandler for EventHandler {
     fn on_event(&mut self,
@@ -13,7 +31,7 @@ impl slack::EventHandler for EventHandler {
                 _: &str) {
 
         let event = event.unwrap();
-
+        println!("{:?}", event);
         let message = match *event {
             slack::Event::Message(ref m) => m,
             _ => return,
@@ -23,18 +41,29 @@ impl slack::EventHandler for EventHandler {
         let chan;
 
         match *message {
-            slack::Message::Standard(stMsg) => {
-                txt = stMsg.text.clone().unwrap();
-                chan = stMsg.channel.clone().unwrap();
+            slack::Message::Standard { ts: _,
+                                       user: _,
+                                       is_starred: _,
+                                       pinned_to: _,
+                                       reactions: _,
+                                       edited: _,
+                                       attachments: _,
+                                       ref text,
+                                       ref channel } => {
+                txt = text.clone().unwrap();
+                chan = channel.clone().unwrap();
             }
             _ => return,
         };
 
-        let cmd = parse_command(txt);
+        let cmd = parse_command(&txt);
 
 
         let reply = match cmd {
-            Command::Annotate(Annotate) => "Done! Annotation added.",
+            Command::Annotate(annotate) => {
+                save(&self.config, &annotate);
+                "Done! Annotation added."
+            }
             Command::Help => {
                 "Type your annotation in \"title. tag 1,tag 2, tag 3. time.\" or \n  \"title. tag \
                  1,tag 2, tag 3.\""
@@ -44,7 +73,7 @@ impl slack::EventHandler for EventHandler {
 
         let _ = client.send_message(&chan, &reply);
 
-        println!("{:?}", cmd);
+        println!("{:?}", reply);
 
     }
 
@@ -71,20 +100,20 @@ enum Command {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Annotate {
-    title: String,
+    what: String,
     tags: Vec<String>,
-    time: DateTime<UTC>,
+    when: i64,
 }
 
 
 impl Annotate {
-    fn new(&title: &String, &tags: &String, &time: &Option<&String>) -> Annotate {
+    fn new(what: &String, tags: &String, when: &Option<&String>) -> Annotate {
         Annotate {
-            title: title,
+            what: what.clone(),
             tags: tags.split(", ").map(|s| s.to_string()).collect::<Vec<String>>(),
-            time: time.and_then(|s| {
+            when: when.and_then(|s| {
 
                     let date = Local.datetime_from_str(s, "%F %R");
 
@@ -98,6 +127,7 @@ impl Annotate {
 
                 })
                 .or_else(|| Some(UTC::now()))
+                .and_then(|d| Some(d.timestamp()))
                 .unwrap(),
         }
     }
@@ -105,7 +135,7 @@ impl Annotate {
 
 
 
-fn parse_command(message: String) -> Command {
+fn parse_command(message: &String) -> Command {
     let tokens: Vec<String> = message.split(". ").map(|s| s.to_string()).collect();
 
     let cmd_token = match tokens.get(0) {
@@ -127,19 +157,46 @@ fn parse_command(message: String) -> Command {
         }
     }
 }
+fn save(config: &Config, annotate: &Annotate) {
 
 
+    let client = Client::new();
+
+    let body = serde_json::to_string(annotate).unwrap();
+
+    let resp = client.post(config.url.as_str())
+        .body(body.as_str())
+        .send();
+
+    match resp {
+        Ok(resp) => println!("{:?}", resp),
+        Err(err) => println!("{:?}", err),
+    }
+}
 
 
+#[derive(RustcDecodable, Clone)]
+struct Config {
+    slack_key: String,
+    url: String,
+}
 
 
 
 fn main() {
-    let api_key = "xoxb-60267315107-BM9hS0cOYPThDVLdHg8OPn4u".to_string();
+    let mut config = String::new();
+    let _ = File::open("config.toml").and_then(|mut f| f.read_to_string(&mut config));
 
-    let mut event_handler = EventHandler;
+    let mut parser = toml::Parser::new(&config);
 
-    let mut cli = slack::RtmClient::new(&api_key);
+    let parsed = parser.parse().unwrap();
+    let config_parsed = parsed.get("config").unwrap();
+
+    let config = toml::decode::<Config>(config_parsed.clone()).unwrap();
+
+    let mut event_handler = EventHandler::new(config.clone());
+
+    let mut cli = slack::RtmClient::new(&config.slack_key.clone());
 
     let result = cli.login_and_run(&mut event_handler);
 
