@@ -31,7 +31,7 @@ impl slack::EventHandler for EventHandler {
                 _: &str) {
 
         let event = event.unwrap();
-        println!("{:?}", event);
+
         let message = match *event {
             slack::Event::Message(ref m) => m,
             _ => return,
@@ -56,7 +56,8 @@ impl slack::EventHandler for EventHandler {
             _ => return,
         };
 
-        let cmd = parse_command(&txt);
+        let bot_tag = format!("<@{}>", client.get_id().unwrap());
+        let cmd = parse_command(&txt, &bot_tag);
 
 
         let reply = match cmd {
@@ -73,21 +74,15 @@ impl slack::EventHandler for EventHandler {
 
         let _ = client.send_message(&chan, &reply);
 
-        println!("{:?}", reply);
+
 
     }
 
-    fn on_ping(&mut self, _: &mut slack::RtmClient) {
-        println!("on_ping");
-    }
+    fn on_ping(&mut self, _: &mut slack::RtmClient) {}
 
-    fn on_close(&mut self, _: &mut slack::RtmClient) {
-        println!("on_close");
-    }
+    fn on_close(&mut self, _: &mut slack::RtmClient) {}
 
-    fn on_connect(&mut self, _: &mut slack::RtmClient) {
-        println!("Connected");
-    }
+    fn on_connect(&mut self, _: &mut slack::RtmClient) {}
 }
 
 
@@ -111,23 +106,20 @@ struct Annotate {
 impl Annotate {
     fn new(what: &String, tags: &String, when: &Option<&String>) -> Annotate {
         Annotate {
-            what: what.clone(),
-            tags: tags.split(", ").map(|s| s.to_string()).collect::<Vec<String>>(),
+            what: what.clone().trim().to_string(),
+            tags: tags.split(",").map(|s| s.trim().to_string()).collect::<Vec<String>>(),
             when: when.and_then(|s| {
 
                     let date = Local.datetime_from_str(s, "%F %R");
 
                     match date {
                         Ok(date) => Some(date.with_timezone(&UTC)),
-                        Err(err) => {
-                            println!("time error: {:?} using current time.", err);
-                            Some(UTC::now())
-                        }
+                        Err(_) => Some(UTC::now()),
                     }
 
                 })
                 .or_else(|| Some(UTC::now()))
-                .and_then(|d| Some(d.timestamp()))
+                .and_then(|d| Some(d.timestamp()*1000))
                 .unwrap(),
         }
     }
@@ -135,20 +127,19 @@ impl Annotate {
 
 
 
-fn parse_command(message: &String) -> Command {
-    let tokens: Vec<String> = message.split(". ").map(|s| s.to_string()).collect();
+fn parse_command(message: &String, bot_tag: &String) -> Command {
+    let tokens: Vec<String> = message.split(".").map(|s| s.trim().to_string()).collect();
 
     let cmd_token = match tokens.get(0) {
-        Some(s) => s,
+        Some(s) => s.trim_left_matches(bot_tag).to_string(),
         None => return Command::None,
-
     };
 
     match cmd_token.as_ref() {
         "help" => Command::Help,
         _ => {
             if tokens.len() >= 2 {
-                return Command::Annotate(Annotate::new(&tokens.get(0).unwrap(),
+                return Command::Annotate(Annotate::new(&cmd_token,
                                                        &tokens.get(1).unwrap(),
                                                        &tokens.get(2)));
             } else {
@@ -169,7 +160,7 @@ fn save(config: &Config, annotate: &Annotate) {
         .send();
 
     match resp {
-        Ok(resp) => println!("{:?}", resp),
+        Ok(_) => {},
         Err(err) => println!("{:?}", err),
     }
 }
