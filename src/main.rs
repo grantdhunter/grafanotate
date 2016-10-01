@@ -12,6 +12,7 @@ use chrono::{UTC, TimeZone, Local};
 use std::io::Read;
 use std::fs::File;
 use hyper::Client;
+use std::process;
 
 struct EventHandler {
     config: Config,
@@ -29,7 +30,6 @@ impl slack::EventHandler for EventHandler {
                 client: &mut slack::RtmClient,
                 event: Result<&slack::Event, slack::Error>,
                 _: &str) {
-
         let event = event.unwrap();
 
         let message = match *event {
@@ -41,15 +41,17 @@ impl slack::EventHandler for EventHandler {
         let chan;
 
         match *message {
-            slack::Message::Standard { ts: _,
-                                       user: _,
-                                       is_starred: _,
-                                       pinned_to: _,
-                                       reactions: _,
-                                       edited: _,
-                                       attachments: _,
-                                       ref text,
-                                       ref channel } => {
+            slack::Message::Standard {
+                ts: _,
+                user: _,
+                is_starred: _,
+                pinned_to: _,
+                reactions: _,
+                edited: _,
+                attachments: _,
+                ref text,
+                ref channel
+            } => {
                 txt = text.clone().unwrap();
                 chan = channel.clone().unwrap();
             }
@@ -73,9 +75,6 @@ impl slack::EventHandler for EventHandler {
         };
 
         let _ = client.send_message(&chan, &reply);
-
-
-
     }
 
     fn on_ping(&mut self, _: &mut slack::RtmClient) {}
@@ -84,7 +83,6 @@ impl slack::EventHandler for EventHandler {
 
     fn on_connect(&mut self, _: &mut slack::RtmClient) {}
 }
-
 
 
 #[derive(Debug)]
@@ -109,22 +107,19 @@ impl Annotate {
             what: what.clone().trim().to_string(),
             tags: tags.split(",").map(|s| s.trim().to_string()).collect::<Vec<String>>(),
             when: when.and_then(|s| {
+                let date = Local.datetime_from_str(s, "%F %R");
 
-                    let date = Local.datetime_from_str(s, "%F %R");
-
-                    match date {
-                        Ok(date) => Some(date.with_timezone(&UTC)),
-                        Err(_) => Some(UTC::now()),
-                    }
-
-                })
+                match date {
+                    Ok(date) => Some(date.with_timezone(&UTC)),
+                    Err(_) => Some(UTC::now()),
+                }
+            })
                 .or_else(|| Some(UTC::now()))
-                .and_then(|d| Some(d.timestamp()*1000))
+                .and_then(|d| Some(d.timestamp() * 1000))
                 .unwrap(),
         }
     }
 }
-
 
 
 fn parse_command(message: &String, bot_tag: &String) -> Command {
@@ -148,9 +143,8 @@ fn parse_command(message: &String, bot_tag: &String) -> Command {
         }
     }
 }
+
 fn save(config: &Config, annotate: &Annotate) {
-
-
     let client = Client::new();
 
     let body = serde_json::to_string(annotate).unwrap();
@@ -173,10 +167,14 @@ struct Config {
 }
 
 
-
 fn main() {
     let mut config = String::new();
-    let _ = File::open("config.toml").and_then(|mut f| f.read_to_string(&mut config));
+    let _ = File::open("config.toml")
+        .and_then(|mut f| f.read_to_string(&mut config))
+        .map_err(|e| {
+            println!("{}", e);
+            process::exit(1);
+        });
 
     let mut parser = toml::Parser::new(&config);
 
